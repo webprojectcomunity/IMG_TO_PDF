@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Batch Folder Gambar ke PDF (Maks. 10 Folder)</title>
+  <!-- Library jsPDF & JSZip -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f1f5f9;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+      max-width: 550px;
+      width: 100%;
+    }
+    h2 { color: #0f172a; margin: 0 0 8px 0; text-align: center; }
+    p.subtitle { color: #64748b; font-size: 13px; text-align: center; margin-bottom: 20px; }
+    
+    .drop-zone {
+      border: 2px dashed #94a3b8;
+      border-radius: 10px;
+      padding: 25px;
+      text-align: center;
+      background-color: #f8fafc;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .drop-zone.dragover {
+      border-color: #2563eb;
+      background-color: #eff6ff;
+    }
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 15px;
+    }
+    .btn {
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+    .btn-primary { background-color: #2563eb; color: white; }
+    .btn-primary:hover { background-color: #1d4ed8; }
+    .btn-success { background-color: #10b981; color: white; width: 100%; margin-top: 15px; font-size: 15px; }
+    .btn-success:hover { background-color: #059669; }
+    .btn-success:disabled { background-color: #cbd5e1; cursor: not-allowed; }
+    .btn-clear { background-color: #ef4444; color: white; font-size: 12px; padding: 6px 12px; }
+    
+    input[type="file"] { display: none; }
+    
+    .folder-list-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #334155;
+    }
+    .folder-list {
+      list-style: none;
+      padding: 0;
+      margin: 10px 0 0 0;
+      max-height: 220px;
+      overflow-y: auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+    }
+    .folder-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 13px;
+    }
+    .folder-item:last-child { border-bottom: none; }
+    .folder-name { font-weight: 600; color: #1e293b; }
+    .folder-count { color: #64748b; font-size: 12px; }
+    .remove-btn {
+      background: none;
+      border: none;
+      color: #ef4444;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    .progress-bar {
+      width: 100%;
+      background-color: #e2e8f0;
+      border-radius: 6px;
+      margin-top: 15px;
+      height: 10px;
+      overflow: hidden;
+      display: none;
+    }
+    .progress-fill {
+      height: 100%;
+      background-color: #2563eb;
+      width: 0%;
+      transition: width 0.2s;
+    }
+    #status {
+      margin-top: 12px;
+      font-size: 13px;
+      text-align: center;
+      color: #334155;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>Batch Folder ke PDF</h2>
+  <p class="subtitle">Tarik & lepas (Drag & Drop) hingga 10 folder sekaligus ke kotak di bawah, atau tambah folder satu per satu.</p>
+
+  <div class="drop-zone" id="dropZone">
+    <div>📂 <strong>Tarik & Lepas Folder di Sini</strong></div>
+    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Bisa langsung drop banyak folder sekaligus (Maks. 10 folder)</div>
+    <div class="btn-group">
+      <label class="btn btn-primary" onclick="event.stopPropagation()">
+        + Tambah Folder
+        <input type="file" id="folderInput" webkitdirectory directory multiple>
+      </label>
+    </div>
+  </div>
+
+  <div class="folder-list-header">
+    <span>Daftar Antrean (<span id="folderCount">0</span>/10 Folder)</span>
+    <button class="btn btn-clear" id="clearAllBtn" style="display: none;">Hapus Semua</button>
+  </div>
+  <ul class="folder-list" id="folderList">
+    <li style="padding: 15px; text-align: center; color: #94a3b8; font-size: 13px;">Belum ada folder yang ditambahkan</li>
+  </ul>
+
+  <button class="btn btn-success" id="convertBtn" disabled>Konversi Semua & Unduh ZIP</button>
+
+  <div class="progress-bar" id="progressBar">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+  <div id="status"></div>
+</div>
+
+<script>
+  const { jsPDF } = window.jspdf;
+  const MAX_FOLDERS = 10;
+  // Menyimpan data folder: Map<folderName, File[]>
+  const folderQueue = new Map();
+
+  const dropZone = document.getElementById('dropZone');
+  const folderInput = document.getElementById('folderInput');
+  const folderList = document.getElementById('folderList');
+  const folderCountSpan = document.getElementById('folderCount');
+  const convertBtn = document.getElementById('convertBtn');
+  const clearAllBtn = document.getElementById('clearAllBtn');
+  const statusDiv = document.getElementById('status');
+  const progressBar = document.getElementById('progressBar');
+  const progressFill = document.getElementById('progressFill');
+
+  const validMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+
+  // 1. Handle Input Klik Tombol (+ Tambah Folder)
+  folderInput.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    const grouped = new Map();
+    files.forEach(file => {
+      if (!validMimeTypes.includes(file.type)) return;
+      const parts = file.webkitRelativePath.split('/');
+      // Jika user memilih folder induk berisi subfolder, gunakan nama subfolder terdekat dengan file
+      const folderName = parts.length > 2 ? parts[parts.length - 2] : parts[0];
+      if (!grouped.has(folderName)) grouped.set(folderName, []);
+      grouped.get(folderName).push(file);
+    });
+
+    addFoldersToQueue(grouped);
+    folderInput.value = ''; // Reset input agar bisa pilih lagi
+  });
+
+  // 2. Handle Drag & Drop Banyak Folder Sekaligus
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('dragover');
+  });
+
+  dropZone.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+
+    const items = Array.from(e.dataTransfer.items);
+    const grouped = new Map();
+
+    for (const item of items) {
+      const entry = item.webkitGetAsEntry();
+      if (entry && entry.isDirectory) {
+        const files = await scanDirectory(entry);
+        if (files.length > 0) {
+          grouped.set(entry.name, files);
+        }
+      }
+    }
+
+    if (grouped.size === 0) {
+      alert('Harap drop FOLDER yang berisi file gambar (JPG/PNG/WEBP).');
+      return;
+    }
+
+    addFoldersToQueue(grouped);
+  });
+
+  // Fungsi rekursif membaca isi folder saat Drag & Drop
+  function scanDirectory(dirEntry) {
+    return new Promise((resolve) => {
+      const reader = dirEntry.createReader();
+      const imageFiles = [];
+
+      const readEntries = () => {
+        reader.readEntries(async (entries) => {
+          if (entries.length === 0) {
+            resolve(imageFiles);
+          } else {
+            for (const entry of entries) {
+              if (entry.isFile) {
+                const file = await new Promise((res) => entry.file(res));
+                if (validMimeTypes.includes(file.type)) {
+                  imageFiles.push(file);
+                }
+              }
+            }
+            readEntries();
+          }
+        });
+      };
+      readEntries();
+    });
+  }
+
+  // Tambahkan ke antrean dengan batas maksimal 10 folder
+  function addFoldersToQueue(groupedMap) {
+    for (const [name, files] of groupedMap.entries()) {
+      if (folderQueue.size >= MAX_FOLDERS && !folderQueue.has(name)) {
+        alert(`Batas maksimal ${MAX_FOLDERS} folder tercapai! Folder "${name}" dilewati.`);
+        break;
+      }
+      // Urutkan gambar secara Natural Ascending
+      files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+      folderQueue.set(name, files);
+    }
+    renderQueueUI();
+  }
+
+  // Render daftar folder di layar
+  function renderQueueUI() {
+    folderCountSpan.innerText = folderQueue.size;
+    convertBtn.disabled = folderQueue.size === 0;
+    clearAllBtn.style.display = folderQueue.size > 0 ? 'inline-block' : 'none';
+
+    if (folderQueue.size === 0) {
+      folderList.innerHTML = `<li style="padding: 15px; text-align: center; color: #94a3b8; font-size: 13px;">Belum ada folder yang ditambahkan</li>`;
+      return;
+    }
+
+    folderList.innerHTML = '';
+    folderQueue.forEach((files, name) => {
+      const li = document.createElement('li');
+      li.className = 'folder-item';
+      li.innerHTML = `
+        <div>
+          <span class="folder-name">📁 ${name}.pdf</span>
+          <span class="folder-count">(${files.length} gambar)</span>
+        </div>
+        <button class="remove-btn" title="Hapus" onclick="removeFolder('${name.replace(/'/g, "\\'")}')">✕</button>
+      `;
+      folderList.appendChild(li);
+    });
+  }
+
+  window.removeFolder = (name) => {
+    folderQueue.delete(name);
+    renderQueueUI();
+  };
+
+  clearAllBtn.addEventListener('click', () => {
+    folderQueue.clear();
+    statusDiv.innerText = '';
+    progressBar.style.display = 'none';
+    renderQueueUI();
+  });
+
+  // 3. Proses Konversi Semua Folder menjadi ZIP berisi PDF
+  convertBtn.addEventListener('click', async () => {
+    if (folderQueue.size === 0) return;
+
+    convertBtn.disabled = true;
+    progressBar.style.display = 'block';
+    progressFill.style.width = '0%';
+
+    const zip = new JSZip();
+    let totalImages = 0;
+    folderQueue.forEach(files => totalImages += files.length);
+
+    let processedImages = 0;
+    let folderIndex = 0;
+
+    for (const [folderName, imageFiles] of folderQueue.entries()) {
+      folderIndex++;
+      let pdf = null;
+
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
+        statusDiv.innerText = `[Folder ${folderIndex}/${folderQueue.size}] Memproses "${folderName}" (${i + 1}/${imageFiles.length})...`;
+
+        const imgData = await readFileAsDataURL(file);
+        const imgProps = await getImageDimensions(imgData);
+
+        const widthMm = imgProps.width * 0.264583;
+        const heightMm = imgProps.height * 0.264583;
+        const orientation = widthMm > heightMm ? 'l' : 'p';
+
+        if (i === 0) {
+          pdf = new jsPDF({ orientation, unit: 'mm', format: [widthMm, heightMm] });
+        } else {
+          pdf.addPage([widthMm, heightMm], orientation);
+        }
+
+        const format = file.type === 'image/png' ? 'PNG' : 'JPEG';
+        pdf.addImage(imgData, format, 0, 0, widthMm, heightMm);
+
+        processedImages++;
+        const percent = Math.round((processedImages / totalImages) * 100);
+        progressFill.style.width = `${percent}%`;
+      }
+
+      // Masukkan hasil PDF ke dalam ZIP
+      const pdfBlob = pdf.output('blob');
+      zip.file(`${folderName}.pdf`, pdfBlob);
+    }
+
+    statusDiv.innerText = '📦 Mengemas semua file PDF ke dalam ZIP...';
+    const zipContent = await zip.generateAsync({ type: 'blob' });
+    
+    // Trigger download ZIP
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(zipContent);
+    link.download = `Batch_${folderQueue.size}_Folder_PDF.zip`;
+    link.click();
+
+    statusDiv.innerText = `✅ Selesai! ${folderQueue.size} file PDF berhasil diunduh dalam bentuk ZIP.`;
+    convertBtn.disabled = false;
+  });
+
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function getImageDimensions(src) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.width, height: img.height });
+      img.src = src;
+    });
+  }
+</script>
+
+</body>
+</html>
